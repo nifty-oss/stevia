@@ -1,0 +1,11 @@
+[package]
+name = "stevia"
+description = "A collection of lightweight zero-copy types"
+version = "0.0.0"
+edition = "2021"
+authors = ["nifty-oss maintainers <maintainers@nifty-oss.org>"]
+repository = "https://github.com/nifty-oss/stevia"
+license = "Apache-2.0"
+
+[dependencies]
+bytemuck = { version = "^1.14", features = ["derive"] }
