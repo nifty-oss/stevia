@@ -26,7 +26,7 @@ cargo add stevia
 The library is divided into several modules:
 
 - `collections`: zero-copy flexible data structures.
-- `pod`: `Pod`-enabled types.
+- `pod`: Pod-enabled types.
 - `types`: zero-copy data types.
 
 ## License
