@@ -1,5 +1,5 @@
 use bytemuck::{Pod, Zeroable};
-use std::cmp::max;
+use std::{cmp::max, fmt::Debug};
 
 /// Constant to represent an empty value.
 const SENTINEL: u32 = 0;
@@ -197,15 +197,27 @@ impl<
         // been resized and we might need to add the new nodes as free nodes
         if nodes.len() > current as usize {
             allocator.set_field(Field::Capacity, nodes.len() as u32);
-            let sequence = allocator.get_field(Field::Sequence);
 
-            if sequence > current {
+            let sequence = allocator.get_field(Field::Sequence);
+            let free_list_head = allocator.get_field(Field::FreeListHead);
+
+            // if sequence == free_list_head, then the tree is full and there are none
+            // free nodes; in this case, extending the tree will add the new nodes; when
+            // sequence != free_list_head, then we need to add the new nodes to the free
+            // list since there are free nodes available
+            if sequence != free_list_head {
                 for i in current..nodes.len() as u32 {
-                    let node = &mut node!(nodes, i);
+                    // nodes are indexed starting from 1
+                    let index = i + 1;
+                    let node = &mut node!(nodes, index);
+
+                    // adds the new node as the head of the free list
                     let free_list_head = allocator.get_field(Field::FreeListHead);
                     node.set_register(Register::Height, free_list_head);
-                    allocator.set_field(Field::FreeListHead, i);
+                    allocator.set_field(Field::FreeListHead, index);
                 }
+
+                allocator.set_field(Field::Sequence, nodes.len() as u32 + 1);
             }
         }
 
@@ -654,6 +666,19 @@ impl Allocator {
         self.fields[field as usize] = value;
     }
 }
+
+impl Debug for Allocator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Allocator")
+            .field("root", &self.fields[0])
+            .field("size", &self.fields[1])
+            .field("capacity", &self.fields[2])
+            .field("free_list_head", &self.fields[3])
+            .field("sequence", &self.fields[4])
+            .finish()
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
 pub struct Node<
@@ -709,7 +734,7 @@ unsafe impl<
 
 #[cfg(test)]
 mod tests {
-    use crate::collections::{avl_tree::Node, AVLTreeMut};
+    use crate::collections::{avl_tree::Node, AVLTree, AVLTreeMut};
 
     #[test]
     fn test_insert() {
@@ -877,6 +902,7 @@ mod tests {
         }
 
         let mut resized = Vec::from(data);
+        // extends the capacity by 1
         resized.extend_from_slice(&[0u8; std::mem::size_of::<Node<u64, u64>>()]);
 
         tree = AVLTreeMut::from_bytes_mut(&mut resized);
@@ -886,10 +912,11 @@ mod tests {
         tree.insert(11, 11);
 
         assert_eq!(tree.len(), CAPACITY + 1);
+        assert!(tree.is_full());
     }
 
     #[test]
-    fn test_resize_after_full() {
+    fn test_remove_resize() {
         const CAPACITY: usize = 10;
 
         let mut data = [0u8; AVLTreeMut::<u64, u64>::data_len(CAPACITY)];
@@ -918,14 +945,96 @@ mod tests {
         assert!(tree.is_full());
         assert!(tree.insert(20, 0).is_none());
 
-        // resize the tree
+        // when resize the tree
         let mut resized = Vec::from(data);
         resized.extend_from_slice(&[0u8; std::mem::size_of::<Node<u64, u64>>()]);
         tree = AVLTreeMut::from_bytes_mut(&mut resized);
 
-        // when we can insert again
+        // then we can insert again
         assert!(!tree.is_full());
         tree.insert(11, 0).unwrap();
+
+        assert_eq!(tree.len(), CAPACITY + 1);
         assert!(tree.is_full());
+    }
+
+    #[test]
+    fn test_insert_resize_insert() {
+        const CAPACITY: usize = 10;
+
+        let mut data = [0u8; AVLTreeMut::<u64, u64>::data_len(CAPACITY)];
+        let mut tree = AVLTreeMut::from_bytes_mut(&mut data);
+
+        tree.allocator.initialize(CAPACITY as u32);
+
+        for i in 0..CAPACITY {
+            tree.insert(i as u64, i as u64);
+        }
+
+        assert_eq!(tree.len(), CAPACITY);
+        assert!(tree.is_full());
+
+        for i in 0..CAPACITY {
+            let key = i as u64;
+
+            tree.remove(&key);
+        }
+
+        for i in 0..CAPACITY {
+            tree.insert(i as u64, i as u64);
+        }
+
+        assert_eq!(tree.len(), CAPACITY);
+        assert!(tree.is_full());
+
+        // resize the tree
+        let mut resized = Vec::from(data);
+        resized.extend_from_slice(&[0u8; std::mem::size_of::<Node<u64, u64>>() * CAPACITY]);
+        tree = AVLTreeMut::from_bytes_mut(&mut resized);
+
+        assert_eq!(tree.len(), CAPACITY);
+        assert_eq!(tree.capacity(), CAPACITY * 2);
+
+        for i in CAPACITY..CAPACITY * 2 {
+            tree.insert(i as u64, i as u64);
+        }
+
+        assert!(tree.is_full());
+        assert_eq!(tree.lowest(), Some(0));
+
+        let last = CAPACITY as u64 * 2 - 1;
+        assert_eq!(tree.get(&last), Some(last));
+    }
+
+    #[test]
+    fn test_readonly_resize() {
+        const CAPACITY: usize = 10;
+
+        let mut data = [0u8; AVLTreeMut::<u64, u64>::data_len(CAPACITY)];
+        let mut tree = AVLTreeMut::from_bytes_mut(&mut data);
+
+        tree.allocator.initialize(CAPACITY as u32);
+
+        for i in 0..CAPACITY {
+            let key = i as u64;
+            let value = i as u64;
+            let _ = tree.insert(key, value);
+        }
+
+        assert_eq!(tree.len(), CAPACITY);
+
+        for i in 0..CAPACITY {
+            let key = i as u64;
+
+            tree.get(&key).unwrap();
+        }
+
+        let mut resized = Vec::from(data);
+        // extends the capacity by 1
+        resized.extend_from_slice(&[0u8; std::mem::size_of::<Node<u64, u64>>()]);
+
+        let readonly_tree: AVLTree<u64, u64> = AVLTree::from_bytes(&resized);
+        assert_eq!(readonly_tree.len(), CAPACITY);
+        assert_eq!(readonly_tree.capacity(), CAPACITY);
     }
 }
