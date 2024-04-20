@@ -6,10 +6,7 @@ edition = "2021"
 authors = ["nifty-oss maintainers <maintainers@nifty-oss.org>"]
 repository = "https://github.com/nifty-oss/stevia"
 license = "Apache-2.0"
-include = ["LICENSE", "LICENSE.third-party"]
-
-[lib]
-test = true
+include = ["/src", "LICENSE", "LICENSE.third-party"]
 
 [dependencies]
 bytemuck = { version = "^1.14", features = ["derive"] }
