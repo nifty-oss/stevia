@@ -1,5 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 
+use crate::ZeroCopy;
+
 /// Used for "pod-enabled" types that can have a `None` value.
 pub trait Nullable: Pod {
     /// Indicates if the value is `Some`.
@@ -21,6 +23,8 @@ pub struct PodOption<T: Nullable>(T);
 unsafe impl<T: Nullable> Pod for PodOption<T> {}
 
 unsafe impl<T: Nullable> Zeroable for PodOption<T> {}
+
+impl<T: Nullable> ZeroCopy for PodOption<T> {}
 
 impl<T: Nullable> PodOption<T> {
     #[inline]

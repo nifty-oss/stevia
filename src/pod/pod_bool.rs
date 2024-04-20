@@ -1,5 +1,7 @@
 use bytemuck::{Pod, Zeroable};
 
+use crate::ZeroCopy;
+
 #[repr(C)]
 #[derive(Copy, Clone, Default, Pod, Zeroable)]
 pub struct PodBool(u8);
@@ -27,3 +29,5 @@ impl From<PodBool> for bool {
         b.0 != 0
     }
 }
+
+impl ZeroCopy for PodBool {}

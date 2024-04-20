@@ -30,7 +30,7 @@ unsafe impl<const MAX_SIZE: usize> Pod for PodStr<MAX_SIZE> {}
 
 unsafe impl<const MAX_SIZE: usize> Zeroable for PodStr<MAX_SIZE> {}
 
-impl<const MAX_SIZE: usize> ZeroCopy<'_, PodStr<MAX_SIZE>> for PodStr<MAX_SIZE> {}
+impl<const MAX_SIZE: usize> ZeroCopy for PodStr<MAX_SIZE> {}
 
 impl<const MAX_SIZE: usize> Default for PodStr<MAX_SIZE> {
     fn default() -> Self {
@@ -89,7 +89,9 @@ impl<const MAX_SIZE: usize> PartialEq<str> for PodStr<MAX_SIZE> {
 
 #[cfg(test)]
 mod tests {
-    use crate::pod::PodStr;
+    use bytemuck::bytes_of;
+
+    use crate::{pod::PodStr, ZeroCopy};
 
     #[test]
     fn test_from() {
@@ -113,5 +115,16 @@ mod tests {
         // Copy a slice that is bigger than the max size.
         str.copy_from_str("emptyemptyempty");
         assert_eq!(&str, "emptyempty");
+    }
+
+    #[test]
+    fn test_load() {
+        let str = PodStr::<10>::from("str");
+        assert_eq!(&str, "str");
+
+        let bytes = bytes_of(&str);
+        let loaded = PodStr::<10>::load(bytes);
+
+        assert_eq!(&str, loaded);
     }
 }
