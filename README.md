@@ -1,5 +1,5 @@
 <h1 align="center">
-  Stevia
+  <code>stevia</code>
 </h1>
 <p align="center">
   <img width="400" alt="Stevia" src="https://github.com/nifty-oss/stevia/assets/729235/3406121f-b224-484a-899c-210766ad7e58" />
