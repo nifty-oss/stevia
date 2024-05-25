@@ -1,19 +1,28 @@
 use bytemuck::{Pod, Zeroable};
-use std::{mem::size_of, ops::Deref};
+use std::{cmp::Ordering, mem::size_of, ops::Deref};
 
 /// Macro to implement the readonly interface for an array set type.
 macro_rules! readonly_impl {
     ( $name:tt ) => {
         impl<'a, V> $name<'a, V>
         where
-            V: Copy + Clone + Default + PartialOrd + Pod + Zeroable,
+            V: Copy + Clone + Default + Ord + Pod + Zeroable,
         {
-            pub fn contains(&self, identity: &V) -> bool {
-                self.get(identity).is_some()
+            /// Returns true if the set contains a value.
+            ///
+            /// The value may be any borrowed form of the set's value type, but `Ord` on the
+            /// borrowed form must match those for the value type.
+            pub fn contains(&self, value: &V) -> bool {
+                self.get(value).is_some()
             }
 
-            pub fn get(&self, identity: &V) -> Option<&V> {
-                if let (Some(index), _) = self.index(identity) {
+            /// Returns a reference to the value in the set, if any, that is equal to the
+            /// given value.
+            ///
+            /// The value may be any borrowed form of the set's value type, but `Ord` on the
+            /// borrowed form must match those for the value type.
+            pub fn get(&self, value: &V) -> Option<&V> {
+                if let (Some(index), _) = self.index(value) {
                     Some(&self.values[index])
                 } else {
                     None
@@ -35,7 +44,7 @@ macro_rules! readonly_impl {
                 *self.length as usize
             }
 
-            /// Returns the rank of the value in the array.
+            /// Returns the index of the value in the array.
             ///
             /// The return value determines if the value is already in the array
             /// or it is a new value that should be inserted. The first return value
@@ -57,13 +66,13 @@ macro_rules! readonly_impl {
                 while start <= end {
                     let middle = start + (end - start) / 2;
 
-                    if value < &self.values[middle] {
-                        end = middle - 1;
-                    } else if value > &self.values[middle] {
-                        start = middle + 1;
-                    } else {
-                        // found the value in the array
-                        return (Some(middle), None);
+                    match value.cmp(&self.values[middle]) {
+                        Ordering::Less => end = middle - 1,
+                        Ordering::Greater => start = middle + 1,
+                        std::cmp::Ordering::Equal => {
+                            // found the value in the array
+                            return (Some(middle), None);
+                        }
                     }
                 }
 
@@ -75,12 +84,12 @@ macro_rules! readonly_impl {
 
         impl<'a, V> Deref for $name<'a, V>
         where
-            V: Copy + Clone + Default + PartialOrd + Pod + Zeroable,
+            V: Copy + Clone + Default + Ord + Pod + Zeroable,
         {
             type Target = [V];
 
             fn deref(&self) -> &Self::Target {
-                self.values
+                &self.values[..self.len()]
             }
         }
     };
@@ -90,6 +99,16 @@ macro_rules! readonly_impl {
 macro_rules! prefix_array_set {
     ( $name:tt, $prefix_type:tt ) => {
         /// A set-like type that stores elements in a sorted array.
+        ///
+        /// It requires that the elements implement the `Ord` trait. It is a logic error
+        /// for a value to be modified in such a way that the value's order, as determined by
+        /// the [`Ord`] trait, or its equality, as determined by the [`Eq`] trait, changes while
+        /// it is in the set.
+        ///
+        /// The behavior resulting from either logic error is not specified, but will
+        /// be encapsulated to the `ArraySet` that observed the logic error and not
+        /// result in undefined behavior. This could include panics, incorrect results,
+        /// aborts, memory leaks, and non-termination.
         pub struct $name<'a, V>
         where
             V: Copy + Clone + Default + PartialOrd + Pod + Zeroable,
@@ -135,7 +154,7 @@ macro_rules! prefix_array_set {
         /// A mutable set-like type that stores elements in a sorted array.
         pub struct $name<'a, V>
         where
-            V: Default + Copy + Clone + PartialOrd + Pod + Zeroable,
+            V: Default + Copy + Clone + Ord + Pod + Zeroable,
         {
             /// Number of elements in the array
             ///
@@ -148,7 +167,7 @@ macro_rules! prefix_array_set {
 
         impl<'a, V> $name<'a, V>
         where
-            V: Default + Copy + Clone + PartialOrd + Pod + Zeroable,
+            V: Default + Copy + Clone + Ord + Pod + Zeroable,
         {
             pub fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
                 let (length, values) = bytes.split_at_mut(size_of::<$prefix_type>());
@@ -158,10 +177,36 @@ macro_rules! prefix_array_set {
                 }
             }
 
-            pub fn insert(&mut self, value: V) -> Option<usize> {
+            /// Returns a mutable reference to the value in the set, if any, that is equal to the
+            /// given value.
+            ///
+            /// The value may be any borrowed form of the set's value type, but `Ord` on the
+            /// borrowed form must match those for the value type.
+            ///
+            /// It is a logic error for a value to be modified in such a way that the value's order,
+            /// as determined by the [`Ord`] trait, or its equality, as determined by the [`Eq`] trait,
+            /// changes while it is in the set.
+            pub fn get_mut(&mut self, value: &V) -> Option<&mut V> {
+                if let (Some(index), _) = self.index(value) {
+                    Some(&mut self.values[index])
+                } else {
+                    None
+                }
+            }
+
+            /// Adds a value to the set.
+            ///
+            /// Returns whether the value was newly inserted. That is:
+            ///
+            /// - If the set did not previously contain this value, `true` is returned.
+            /// - If the set already contained this value, `false` is returned,
+            ///   and the set is not modified: original value is not replaced,
+            ///   and the value passed as argument is dropped.
+            /// - If the set is full, `false` is returned.
+            pub fn insert(&mut self, value: V) -> bool {
                 // does not attempt to insert if the array is full
                 if self.is_full() {
-                    return None;
+                    return false;
                 }
 
                 if let (_, Some(index)) = self.index(&value) {
@@ -175,19 +220,31 @@ macro_rules! prefix_array_set {
                     // insert the new value
                     self.values[index] = value;
                     *self.length += 1;
-                    return Some(index);
+                    return true;
                 }
 
-                None
+                false
             }
 
-            pub fn remove(&mut self, identity: &V) -> Option<V> {
+            /// Removes a value from the set and returns whether the value was present in the set.
+            ///
+            /// The value may be any borrowed form of the set's value type, but
+            /// [`Ord`] on the borrowed form *must* match those for the value type.
+            pub fn remove(&mut self, value: &V) -> bool {
+                self.take(value).is_some()
+            }
+
+            /// Removes and returns the value in the set, if any, that is equal to the given one.
+            ///
+            /// The value may be any borrowed form of the set's value type, but
+            /// [`Ord`] on the borrowed form *must* match those for the value type.
+            pub fn take(&mut self, value: &V) -> Option<V> {
                 // does not attempt to remove if the array is empty
                 if self.is_empty() {
                     return None;
                 }
 
-                if let (Some(index), _) = self.index(identity) {
+                if let (Some(index), _) = self.index(value) {
                     let value = self.values[index];
 
                     // only need to copy bytes around if the element being removed
@@ -238,7 +295,7 @@ mod tests {
 
         let set = U64ArraySet::<u8>::from_bytes(&bytes);
         assert_eq!(set.len(), 5);
-        assert_eq!(&set[..5], &[1, 2, 4, 7, 10]);
+        assert_eq!(&*set, &[1, 2, 4, 7, 10]);
 
         assert!(set.get(&1).is_some());
     }
@@ -254,22 +311,22 @@ mod tests {
         set.insert(7);
         set.insert(4);
 
-        assert_eq!(&set[..5], &[1, 2, 4, 7, 10]);
+        assert_eq!(&*set, &[1, 2, 4, 7, 10]);
 
         set.remove(&2);
         assert_eq!(set.len(), 4);
-        assert_eq!(&set[..4], &[1, 4, 7, 10]);
+        assert_eq!(&*set, &[1, 4, 7, 10]);
 
         set.remove(&10);
         assert_eq!(set.len(), 3);
-        assert_eq!(&set[..3], &[1, 4, 7]);
+        assert_eq!(&*set, &[1, 4, 7]);
 
         set.remove(&4);
         assert_eq!(set.len(), 2);
-        assert_eq!(&set[..2], &[1, 7]);
+        assert_eq!(&*set, &[1, 7]);
 
         set.remove(&1);
         assert_eq!(set.len(), 1);
-        assert_eq!(&set[..1], &[7]);
+        assert_eq!(&*set, &[7]);
     }
 }
