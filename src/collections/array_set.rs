@@ -64,13 +64,21 @@ macro_rules! readonly_impl {
                 let mut end = (*self.length - 1) as usize;
 
                 while start <= end {
-                    let middle = start + (end - start) / 2;
+                    let middle = start + (end.saturating_sub(start) / 2);
 
                     match value.cmp(&self.values[middle]) {
-                        Ordering::Less => end = middle - 1,
-                        Ordering::Greater => start = middle + 1,
+                        // if we are already at the start of the array, there are no
+                        // more elements to check
+                        Ordering::Less if end == start => break,
+
+                        // value might be in the first half of the array
+                        Ordering::Less => end = middle.saturating_sub(1),
+
+                        // value might be in the second half of the array
+                        Ordering::Greater => start = middle.saturating_add(1),
+
+                        // found the value in the array
                         std::cmp::Ordering::Equal => {
-                            // found the value in the array
                             return (Some(middle), None);
                         }
                     }
@@ -287,8 +295,8 @@ mod tests {
         let mut bytes = vec![0; size_of::<u64>() + 10 * size_of::<u8>()];
         let mut set = U64ArraySetMut::<u8>::from_bytes_mut(&mut bytes);
 
-        set.insert(1);
         set.insert(10);
+        set.insert(1);
         set.insert(2);
         set.insert(7);
         set.insert(4);
@@ -328,5 +336,22 @@ mod tests {
         set.remove(&1);
         assert_eq!(set.len(), 1);
         assert_eq!(&*set, &[7]);
+    }
+
+    #[test]
+    fn test_get() {
+        let mut bytes = vec![0; size_of::<u64>() + 10 * size_of::<u8>()];
+        let mut set = U8ArraySetMut::<u8>::from_bytes_mut(&mut bytes);
+
+        set.insert(1);
+        set.insert(10);
+        set.insert(7);
+        set.insert(2);
+        set.insert(4);
+
+        assert_eq!(&*set, &[1, 2, 4, 7, 10]);
+
+        assert!(set.get(&10).is_some());
+        assert!(set.get_mut(&10).is_some());
     }
 }
