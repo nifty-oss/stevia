@@ -3,6 +3,7 @@ pub mod avl_tree;
 pub mod hash_set;
 pub mod u8_avl_tree;
 
+pub use array_set::*;
 pub use avl_tree::AVLTree;
 pub use avl_tree::AVLTreeMut;
 pub use hash_set::HashSet;

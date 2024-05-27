@@ -156,7 +156,7 @@ readonly_impl!(U16ArraySet);
 readonly_impl!(U32ArraySet);
 readonly_impl!(U64ArraySet);
 
-/// Macro to implement an array set type.
+/// Macro to implement a mutable array set type.
 macro_rules! prefix_array_set {
     ( $name:tt, $prefix_type:tt ) => {
         /// A mutable set-like type that stores elements in a sorted array.
