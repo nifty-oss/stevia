@@ -1,3 +1,4 @@
+pub mod array_set;
 pub mod avl_tree;
 pub mod hash_set;
 pub mod u8_avl_tree;

@@ -36,7 +36,7 @@ macro_rules! node {
     };
 }
 
-/// Macro to implement the readonly interface for an AVL tree type.
+/// Macro to implement the readonly interface for a hash set type.
 macro_rules! readonly_impl {
     ( $name:tt ) => {
         impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> $name<'a, V> {
@@ -339,7 +339,7 @@ impl<'a, V: Default + Copy + Clone + Hash + PartialEq + Pod + Zeroable> HashSetM
     }
 }
 
-/// The allocator is responsible to keep track of the status of the tree.
+/// The allocator is responsible to keep track of the status of the set.
 ///
 /// It uses two special fields to determine if the set is full and to reuse
 /// deleted nodes. Until the set is full, the `sequence` has the same value
