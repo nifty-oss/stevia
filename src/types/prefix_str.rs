@@ -206,6 +206,23 @@ mod tests {
     }
 
     #[test]
+    fn test_new_with_exact_str() {
+        // u8
+        let mut data = [0u8; 4];
+        let mut prefix_str = U8PrefixStrMut::new(&mut data);
+        prefix_str.copy_from_str("str");
+
+        assert_eq!(prefix_str.as_str(), "str");
+
+        // u16
+        let mut data = [0u8; 5];
+        let mut prefix_str = U16PrefixStrMut::new(&mut data);
+        prefix_str.copy_from_str("str");
+
+        assert_eq!(prefix_str.as_str(), "str");
+    }
+
+    #[test]
     fn test_from_bytes() {
         // u8
         let mut data = [0u8; 4];
