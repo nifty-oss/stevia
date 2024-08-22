@@ -88,50 +88,57 @@ impl<const MAX_SIZE: usize> From<String> for PodStr<MAX_SIZE> {
 #[cfg(test)]
 mod tests {
     use bytemuck::bytes_of;
+    use std::str::Utf8Error;
 
     use crate::{pod::PodStr, ZeroCopy};
 
+    type Result = std::result::Result<(), Utf8Error>;
+
     #[test]
-    fn test_from() {
+    fn test_from() -> Result {
         let str = PodStr::<10>::from("str");
-        assert_eq!(str.as_str().unwrap(), "str");
+        assert_eq!(str.as_str()?, "str");
+        Ok(())
     }
 
     #[test]
-    fn test_invalid_bytes() {
+    fn test_invalid_bytes() -> Result {
         // Invalid utf-8 bytes. The fourth byte has to be 10xxxxxx.
         let invalid_bits: [u8; 4] = [0b1111_0000, 0b1100_0000, 0b1100_0000, 1];
         let mut str = PodStr::<10>::default();
         str.copy_from_slice(&invalid_bits);
         assert!(str.as_str().is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_copy_from_slice() {
+    fn test_copy_from_slice() -> Result {
         let mut str = PodStr::<10>::from("empty");
-        assert_eq!(str.as_str().unwrap(), "empty");
+        assert_eq!(str.as_str()?, "empty");
 
         // Copy a slice that is equal to the max size.
         str.copy_from_str("emptyempty");
-        assert_eq!(str.as_str().unwrap(), "emptyempty");
+        assert_eq!(str.as_str()?, "emptyempty");
 
         // Copy a slice that is smaller than the max size.
         str.copy_from_str("empty");
-        assert_eq!(str.as_str().unwrap(), "empty");
+        assert_eq!(str.as_str()?, "empty");
 
         // Copy a slice that is bigger than the max size.
         str.copy_from_str("emptyemptyempty");
-        assert_eq!(str.as_str().unwrap(), "emptyempty");
+        assert_eq!(str.as_str()?, "emptyempty");
+        Ok(())
     }
 
     #[test]
-    fn test_load() {
+    fn test_load() -> Result {
         let str = PodStr::<10>::from("str");
-        assert_eq!(str.as_str().unwrap(), "str");
+        assert_eq!(str.as_str()?, "str");
 
         let bytes = bytes_of(&str);
         let loaded = PodStr::<10>::load(bytes);
 
         assert_eq!(&str, loaded);
+        Ok(())
     }
 }
