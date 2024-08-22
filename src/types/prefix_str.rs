@@ -33,8 +33,8 @@ macro_rules! prefix_str {
             pub unsafe fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
                 let (length, value) = bytes.split_at(std::mem::size_of::<$prefix_type>());
 
-                let length = bytemuck::from_bytes::<$prefix_type>(length);
-                let value = bytemuck::cast_slice(&value[..*length as usize]);
+                let length = bytemuck::pod_read_unaligned::<$prefix_type>(length);
+                let value = bytemuck::cast_slice(&value[..length as usize]);
 
                 Self { value }
             }
@@ -93,8 +93,8 @@ macro_rules! prefix_str_mut {
             pub unsafe fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
                 let (length, value) = bytes.split_at_mut(std::mem::size_of::<$prefix_type>());
 
-                let length = bytemuck::from_bytes_mut::<$prefix_type>(length);
-                let value = bytemuck::cast_slice_mut(&mut value[..*length as usize]);
+                let length = bytemuck::pod_read_unaligned::<$prefix_type>(length);
+                let value = bytemuck::cast_slice_mut(&mut value[..length as usize]);
 
                 Self { value }
             }
