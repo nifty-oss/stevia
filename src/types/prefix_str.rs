@@ -17,12 +17,24 @@ macro_rules! prefix_str {
         }
 
         impl<'a> $name<'a> {
+            /// Loads from a byte slice. This also checks that the resulting str bytes are valid UTF-8.
+            /// To skip this safety check, see [`Self::from_bytes_unchecked`].
+            pub fn from_bytes(bytes: &'a [u8]) -> Result<Self, std::str::Utf8Error> {
+                // Technically we are doing the check after this method, but it is being done before anyone can touch Self
+                let to_return = unsafe { Self::from_bytes_unchecked(bytes) };
+                std::str::from_utf8(to_return.value)?;
+                Ok(to_return)
+            }
+
             /// Loads from a byte slice.
-            pub fn from_bytes(bytes: &'a [u8]) -> Self {
+            ///
+            /// # Safety
+            /// The caller must guarantee that the resulting str bytes are valid UTF-8.
+            pub unsafe fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
                 let (length, value) = bytes.split_at(std::mem::size_of::<$prefix_type>());
 
-                let length = bytemuck::from_bytes::<$prefix_type>(length);
-                let value = bytemuck::cast_slice(&value[..*length as usize]);
+                let length = bytemuck::pod_read_unaligned::<$prefix_type>(length);
+                let value = bytemuck::cast_slice(&value[..length as usize]);
 
                 Self { value }
             }
@@ -46,10 +58,26 @@ macro_rules! prefix_str_mut {
         }
 
         impl<'a> $name<'a> {
+            /// Creates a new reference from a byte slice. This also checks that the str bytes are valid UTF-8.
+            /// To skip this safety check, see [`Self::new_unchecked`].
+            ///
+            /// The `data` is used as the storage for the type.
+            pub fn new(data: &'a mut [u8]) -> Result<Self, std::str::Utf8Error> {
+                // Check that the bytes are valid UTF-8
+                let to_return = unsafe { Self::new_unchecked(data) };
+                std::str::from_utf8(to_return.value)?;
+                Ok(to_return)
+            }
+
             /// Creates a new reference from a byte slice.
             ///
-            /// The `data` is used a the storage for the type.
-            pub fn new(data: &'a mut [u8]) -> Self {
+            /// The `data` is used as the storage for the type.
+            ///
+            /// # Safety
+            /// The caller must guarantee that the resulting str bytes are valid UTF-8.
+            /// The resulting bytes would be the `data` after the size of the length bytes and up to
+            /// the value of the length bytes.
+            pub unsafe fn new_unchecked(data: &'a mut [u8]) -> Self {
                 let type_length = std::mem::size_of::<$prefix_type>();
                 let length = (data.len().saturating_sub(type_length) as $prefix_type).to_le_bytes();
                 data[..type_length].copy_from_slice(&length);
@@ -57,17 +85,26 @@ macro_rules! prefix_str_mut {
             }
 
             /// Loads from a mutable byte slice.
-            pub fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
+            ///
+            /// # Safety
+            /// The caller must guarantee that the resulting str bytes are valid UTF-8.
+            /// The resulting bytes would be the `data` after the size of the length bytes and up to
+            /// the value of the length bytes.
+            pub unsafe fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
                 let (length, value) = bytes.split_at_mut(std::mem::size_of::<$prefix_type>());
 
-                let length = bytemuck::from_bytes_mut::<$prefix_type>(length);
-                let value = bytemuck::cast_slice_mut(&mut value[..*length as usize]);
+                let length = bytemuck::pod_read_unaligned::<$prefix_type>(length);
+                let value = bytemuck::cast_slice_mut(&mut value[..length as usize]);
 
                 Self { value }
             }
 
             /// Copy the content of a slice into the prefixed str.
-            pub fn copy_from_slice(&mut self, slice: &[u8]) {
+            ///
+            /// # Safety
+            /// The caller must guarantee that the `slice` from the start to `min(self.len(), slice.len())`
+            /// is valid UTF-8.
+            pub unsafe fn copy_from_slice(&mut self, slice: &[u8]) {
                 let length = std::cmp::min(self.value.len(), slice.len());
                 self.value[..length].clone_from_slice(&slice[..length]);
                 self.value[length..].fill(0);
@@ -75,7 +112,8 @@ macro_rules! prefix_str_mut {
 
             /// Copy the content of a `&str` into the prefixed str.
             pub fn copy_from_str(&mut self, string: &str) {
-                self.copy_from_slice(string.as_bytes())
+                // Safety: the &str bytes are valid UTF-8
+                unsafe { self.copy_from_slice(string.as_bytes()) }
             }
         }
 
@@ -136,12 +174,15 @@ prefix_str_type!(
 #[cfg(test)]
 mod tests {
     use crate::types::{U16PrefixStr, U16PrefixStrMut, U8PrefixStr, U8PrefixStrMut};
+    use std::str::Utf8Error;
+
+    type Result = std::result::Result<(), Utf8Error>;
 
     #[test]
-    fn test_new() {
+    fn test_new() -> Result {
         // u8
         let mut data = [0u8; 4];
-        let mut prefix_str = U8PrefixStrMut::new(&mut data);
+        let mut prefix_str = U8PrefixStrMut::new(&mut data)?;
         prefix_str.copy_from_str("str");
 
         assert_eq!(prefix_str.as_str(), "str");
@@ -149,70 +190,74 @@ mod tests {
 
         // u16
         let mut data = [0u8; 5];
-        let mut prefix_str = U16PrefixStrMut::new(&mut data);
+        let mut prefix_str = U16PrefixStrMut::new(&mut data)?;
         prefix_str.copy_from_str("str");
 
         assert_eq!(prefix_str.as_str(), "str");
         assert_eq!(prefix_str.size(), data.len());
+        Ok(())
     }
 
     #[test]
-    fn test_new_with_empty_str() {
+    fn test_new_with_empty_str() -> Result {
         // u8
         let mut data = [0u8; 1];
-        let prefix_str = U8PrefixStrMut::new(&mut data);
+        let prefix_str = U8PrefixStrMut::new(&mut data)?;
 
         assert_eq!(prefix_str.len(), 0);
 
         // u16
         let mut data = [0u8; 2];
-        let prefix_str = U16PrefixStrMut::new(&mut data);
+        let prefix_str = U16PrefixStrMut::new(&mut data)?;
 
         assert_eq!(prefix_str.len(), 0);
+        Ok(())
     }
 
     #[test]
-    fn test_new_with_shorter_str() {
+    fn test_new_with_shorter_str() -> Result {
         // u8
         let mut data = [0u8; 10];
-        let mut prefix_str = U8PrefixStrMut::new(&mut data);
+        let mut prefix_str = U8PrefixStrMut::new(&mut data)?;
         prefix_str.copy_from_str("string");
 
         assert_eq!(prefix_str.as_str(), "string\0\0\0");
 
         // u16
         let mut data = [0u8; 11];
-        let mut prefix_str = U16PrefixStrMut::new(&mut data);
+        let mut prefix_str = U16PrefixStrMut::new(&mut data)?;
         prefix_str.copy_from_str("string");
 
         assert_eq!(prefix_str.as_str(), "string\0\0\0");
+        Ok(())
     }
 
     #[test]
-    fn test_new_with_larger_str() {
+    fn test_new_with_larger_str() -> Result {
         // u8
         let mut data = [0u8; 4];
-        let mut prefix_str = U8PrefixStrMut::new(&mut data);
+        let mut prefix_str = U8PrefixStrMut::new(&mut data)?;
         prefix_str.copy_from_str("string");
 
         assert_eq!(prefix_str.as_str(), "str");
 
         // u16
         let mut data = [0u8; 5];
-        let mut prefix_str = U16PrefixStrMut::new(&mut data);
+        let mut prefix_str = U16PrefixStrMut::new(&mut data)?;
         prefix_str.copy_from_str("string");
 
         assert_eq!(prefix_str.as_str(), "str");
+        Ok(())
     }
 
     #[test]
-    fn test_from_bytes() {
+    fn test_from_bytes() -> Result {
         // u8
         let mut data = [0u8; 4];
         data[0] = 3;
         data[1..].copy_from_slice("str".as_bytes());
 
-        let prefix_str = U8PrefixStr::from_bytes(&data);
+        let prefix_str = U8PrefixStr::from_bytes(&data)?;
         assert_eq!(prefix_str.as_str(), "str");
 
         // u16
@@ -220,7 +265,8 @@ mod tests {
         data[..2].copy_from_slice(&3u16.to_le_bytes());
         data[2..].copy_from_slice("str".as_bytes());
 
-        let prefix_str = U16PrefixStr::from_bytes(&data);
+        let prefix_str = U16PrefixStr::from_bytes(&data)?;
         assert_eq!(prefix_str.as_str(), "str");
+        Ok(())
     }
 }

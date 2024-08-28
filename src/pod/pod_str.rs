@@ -1,13 +1,12 @@
+use crate::ZeroCopy;
 use bytemuck::{Pod, Zeroable};
 use std::fmt::{Debug, Display};
-use std::ops::Deref;
 use std::str;
-
-use crate::ZeroCopy;
+use std::str::Utf8Error;
 
 /// Struct representing a "pod-enabled" `str`.
 #[repr(C)]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub struct PodStr<const MAX_SIZE: usize> {
     /// The bytes of the string.
     pub value: [u8; MAX_SIZE],
@@ -23,6 +22,30 @@ impl<const MAX_SIZE: usize> PodStr<MAX_SIZE> {
     /// Copy the content of a `&str` into the pod str.
     pub fn copy_from_str(&mut self, string: &str) {
         self.copy_from_slice(string.as_bytes())
+    }
+
+    /// Tries to convert to a `&str` if it is valid UTF-8. Behaves like [`str::from_utf8`].
+    pub fn as_str(&self) -> Result<&str, Utf8Error> {
+        let end_index = self
+            .value
+            .iter()
+            .position(|&x| x == b'\0')
+            .unwrap_or(MAX_SIZE);
+        str::from_utf8(&self.value[..end_index])
+    }
+
+    /// Converts to a `&str` without checking if it is valid UTF-8.
+    ///
+    /// # Safety
+    /// The caller must guarantee that the bytes are valid UTF-8. This has the same safety requirements
+    /// as [`str::from_utf8_unchecked`].
+    pub unsafe fn as_str_unchecked(&self) -> &str {
+        let end_index = self
+            .value
+            .iter()
+            .position(|&x| x == b'\0')
+            .unwrap_or(MAX_SIZE);
+        unsafe { str::from_utf8_unchecked(&self.value[..end_index]) }
     }
 }
 
@@ -40,29 +63,10 @@ impl<const MAX_SIZE: usize> Default for PodStr<MAX_SIZE> {
     }
 }
 
-impl<const MAX_SIZE: usize> Deref for PodStr<MAX_SIZE> {
-    type Target = str;
-
-    fn deref(&self) -> &Self::Target {
-        let end_index = self
-            .value
-            .iter()
-            .position(|&x| x == b'\0')
-            .unwrap_or(MAX_SIZE);
-
-        unsafe { str::from_utf8_unchecked(&self.value[..end_index]) }
-    }
-}
-
 impl<const MAX_SIZE: usize> Display for PodStr<MAX_SIZE> {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self)
-    }
-}
-
-impl<const MAX_SIZE: usize> Debug for PodStr<MAX_SIZE> {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self)
+        let str = String::from_utf8_lossy(&self.value);
+        formatter.write_str(&str)
     }
 }
 
@@ -81,50 +85,60 @@ impl<const MAX_SIZE: usize> From<String> for PodStr<MAX_SIZE> {
     }
 }
 
-impl<const MAX_SIZE: usize> PartialEq<str> for PodStr<MAX_SIZE> {
-    fn eq(&self, other: &str) -> bool {
-        self.deref() == other
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use bytemuck::bytes_of;
+    use std::str::Utf8Error;
 
     use crate::{pod::PodStr, ZeroCopy};
 
+    type Result = std::result::Result<(), Utf8Error>;
+
     #[test]
-    fn test_from() {
+    fn test_from() -> Result {
         let str = PodStr::<10>::from("str");
-        assert_eq!(&str, "str");
+        assert_eq!(str.as_str()?, "str");
+        Ok(())
     }
 
     #[test]
-    fn test_copy_from_slice() {
+    fn test_invalid_bytes() -> Result {
+        // Invalid utf-8 bytes. The fourth byte has to be 10xxxxxx.
+        let invalid_bits: [u8; 4] = [0b1111_0000, 0b1100_0000, 0b1100_0000, 1];
+        let mut str = PodStr::<10>::default();
+        str.copy_from_slice(&invalid_bits);
+        assert!(str.as_str().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn test_copy_from_slice() -> Result {
         let mut str = PodStr::<10>::from("empty");
-        assert_eq!(&str, "empty");
+        assert_eq!(str.as_str()?, "empty");
 
         // Copy a slice that is equal to the max size.
         str.copy_from_str("emptyempty");
-        assert_eq!(&str, "emptyempty");
+        assert_eq!(str.as_str()?, "emptyempty");
 
         // Copy a slice that is smaller than the max size.
         str.copy_from_str("empty");
-        assert_eq!(&str, "empty");
+        assert_eq!(str.as_str()?, "empty");
 
         // Copy a slice that is bigger than the max size.
         str.copy_from_str("emptyemptyempty");
-        assert_eq!(&str, "emptyempty");
+        assert_eq!(str.as_str()?, "emptyempty");
+        Ok(())
     }
 
     #[test]
-    fn test_load() {
+    fn test_load() -> Result {
         let str = PodStr::<10>::from("str");
-        assert_eq!(&str, "str");
+        assert_eq!(str.as_str()?, "str");
 
         let bytes = bytes_of(&str);
         let loaded = PodStr::<10>::load(bytes);
 
         assert_eq!(&str, loaded);
+        Ok(())
     }
 }
