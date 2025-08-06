@@ -1,12 +1,13 @@
-use bytemuck::{Pod, Zeroable};
-use std::{cmp::Ordering, mem::size_of, ops::Deref};
+use core::{cmp::Ordering, ops::Deref, ptr::copy};
 
-/// Macro to implement the readonly interface for an array set type.
+use crate::transmute::{cast_slice_unchecked, cast_slice_unchecked_mut, Transmute};
+
+/// Macro to implement the read-only interface for an array set type.
 macro_rules! readonly_impl {
     ( $name:tt ) => {
         impl<'a, V> $name<'a, V>
         where
-            V: Copy + Clone + Default + Ord + Pod + Zeroable,
+            V: Clone + Copy + Default + Ord + PartialOrd + Transmute,
         {
             /// Returns true if the set contains a value.
             ///
@@ -30,17 +31,17 @@ macro_rules! readonly_impl {
             }
 
             #[inline(always)]
-            pub fn is_empty(&self) -> bool {
+            pub const fn is_empty(&self) -> bool {
                 self.len() == 0
             }
 
             #[inline(always)]
-            pub fn is_full(&self) -> bool {
+            pub const fn is_full(&self) -> bool {
                 self.len() == self.values.len()
             }
 
             #[inline(always)]
-            pub fn len(&self) -> usize {
+            pub const fn len(&self) -> usize {
                 *self.length as usize
             }
 
@@ -78,7 +79,7 @@ macro_rules! readonly_impl {
                         Ordering::Greater => start = middle.saturating_add(1),
 
                         // found the value in the array
-                        std::cmp::Ordering::Equal => {
+                        Ordering::Equal => {
                             return (Some(middle), None);
                         }
                     }
@@ -92,7 +93,7 @@ macro_rules! readonly_impl {
 
         impl<'a, V> Deref for $name<'a, V>
         where
-            V: Copy + Clone + Default + Ord + Pod + Zeroable,
+            V: Clone + Copy + Default + Ord + PartialOrd + Transmute,
         {
             type Target = [V];
 
@@ -119,7 +120,7 @@ macro_rules! prefix_array_set {
         /// aborts, memory leaks, and non-termination.
         pub struct $name<'a, V>
         where
-            V: Copy + Clone + Default + PartialOrd + Pod + Zeroable,
+            V: Clone + Copy + Default + PartialOrd + Transmute,
         {
             /// Number of elements in the array
             ///
@@ -132,14 +133,20 @@ macro_rules! prefix_array_set {
 
         impl<'a, V> $name<'a, V>
         where
-            V: Copy + Clone + Default + PartialOrd + Pod + Zeroable,
+            V: Copy + Clone + Default + PartialOrd + Transmute,
         {
             /// Loads a sorted array from its byte representation.
-            pub fn from_bytes(bytes: &'a [u8]) -> Self {
+            ///
+            /// # Safety
+            ///
+            /// This method does not check the length of the byte slice nor its
+            /// alignment. The caller must ensure that the byte slice contains a
+            /// valid representation.
+            pub unsafe fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
                 let (length, values) = bytes.split_at(size_of::<$prefix_type>());
                 Self {
-                    length: bytemuck::from_bytes(length),
-                    values: bytemuck::cast_slice(values),
+                    length: <$prefix_type>::transmute_unchecked(length),
+                    values: cast_slice_unchecked(values),
                 }
             }
         }
@@ -162,7 +169,7 @@ macro_rules! prefix_array_set {
         /// A mutable set-like type that stores elements in a sorted array.
         pub struct $name<'a, V>
         where
-            V: Default + Copy + Clone + Ord + Pod + Zeroable,
+            V: Default + Copy + Clone + Ord + Transmute,
         {
             /// Number of elements in the array
             ///
@@ -175,13 +182,20 @@ macro_rules! prefix_array_set {
 
         impl<'a, V> $name<'a, V>
         where
-            V: Default + Copy + Clone + Ord + Pod + Zeroable,
+            V: Default + Copy + Clone + Ord + Transmute,
         {
-            pub fn from_bytes_mut(bytes: &'a mut [u8]) -> Self {
+            /// Loads a sorted array from its byte representation.
+            ///
+            /// # Safety
+            ///
+            /// This method does not check the length of the byte slice nor its
+            /// alignment. The caller must ensure that the byte slice contains a
+            /// valid representation.
+            pub unsafe fn from_bytes_unchecked_mut(bytes: &'a mut [u8]) -> Self {
                 let (length, values) = bytes.split_at_mut(size_of::<$prefix_type>());
                 Self {
-                    length: bytemuck::from_bytes_mut(length),
-                    values: bytemuck::cast_slice_mut(values),
+                    length: <$prefix_type>::transmute_unchecked_mut(length),
+                    values: cast_slice_unchecked_mut(values),
                 }
             }
 
@@ -223,7 +237,7 @@ macro_rules! prefix_array_set {
                         let src_ptr = ptr.add(index);
                         let dest_ptr = ptr.add(index + 1);
                         // move the bytes to create space for the new value
-                        std::ptr::copy(src_ptr, dest_ptr, self.values.len() - index);
+                        copy(src_ptr, dest_ptr, self.values.len() - (index + 1));
                     }
                     // insert the new value
                     self.values[index] = value;
@@ -253,7 +267,7 @@ macro_rules! prefix_array_set {
                 }
 
                 if let (Some(index), _) = self.index(value) {
-                    let value = self.values[index];
+                    let value = *self.values.get(index).unwrap();
 
                     // only need to copy bytes around if the element being removed
                     // is not the last element in the array
@@ -263,7 +277,7 @@ macro_rules! prefix_array_set {
                             let src_ptr = ptr.add(index + 1);
                             let dest_ptr = ptr.add(index);
                             // move the bytes after the value being removed
-                            std::ptr::copy(src_ptr, dest_ptr, self.values.len() - index);
+                            copy(src_ptr, dest_ptr, self.values.len() - (index + 1));
                         }
                     }
                     *self.length -= 1;
@@ -288,12 +302,16 @@ readonly_impl!(U64ArraySetMut);
 
 #[cfg(test)]
 mod tests {
+    use core::slice::from_raw_parts_mut;
+
     use super::*;
 
     #[test]
     fn test_insert() {
-        let mut bytes = vec![0; size_of::<u64>() + 10 * size_of::<u8>()];
-        let mut set = U64ArraySetMut::<u8>::from_bytes_mut(&mut bytes);
+        let mut array = [0u64; size_of::<u64>() * 3];
+        // Ensure that `bytes` has 8-byte alignment.
+        let bytes = unsafe { from_raw_parts_mut(array.as_mut_ptr() as *mut u8, 18) };
+        let mut set = unsafe { U64ArraySetMut::<u8>::from_bytes_unchecked_mut(bytes) };
 
         set.insert(10);
         set.insert(1);
@@ -301,7 +319,7 @@ mod tests {
         set.insert(7);
         set.insert(4);
 
-        let set = U64ArraySet::<u8>::from_bytes(&bytes);
+        let set = unsafe { U64ArraySet::<u8>::from_bytes_unchecked(bytes) };
         assert_eq!(set.len(), 5);
         assert_eq!(&*set, &[1, 2, 4, 7, 10]);
 
@@ -310,8 +328,8 @@ mod tests {
 
     #[test]
     fn test_remove() {
-        let mut bytes = vec![0; size_of::<u64>() + 10 * size_of::<u8>()];
-        let mut set = U8ArraySetMut::<u8>::from_bytes_mut(&mut bytes);
+        let mut bytes = [0; size_of::<u8>() + 10 * size_of::<u8>()];
+        let mut set = unsafe { U8ArraySetMut::<u8>::from_bytes_unchecked_mut(&mut bytes) };
 
         set.insert(1);
         set.insert(10);
@@ -340,8 +358,8 @@ mod tests {
 
     #[test]
     fn test_get() {
-        let mut bytes = vec![0; size_of::<u64>() + 10 * size_of::<u8>()];
-        let mut set = U8ArraySetMut::<u8>::from_bytes_mut(&mut bytes);
+        let mut bytes = [0; size_of::<u8>() + 10 * size_of::<u8>()];
+        let mut set = unsafe { U8ArraySetMut::<u8>::from_bytes_unchecked_mut(&mut bytes) };
 
         set.insert(1);
         set.insert(10);
