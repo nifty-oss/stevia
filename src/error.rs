@@ -16,6 +16,9 @@ pub enum TranslationError {
 
     /// Invalid value found for type.
     InvalidValue,
+
+    /// Misaligned memory for translation.
+    Misaligned,
 }
 
 impl Error for TranslationError {}
@@ -25,6 +28,7 @@ impl Display for TranslationError {
         match self {
             TranslationError::InvalidLength => write!(f, "invalid length for translation"),
             TranslationError::InvalidValue => write!(f, "invalid value found for type"),
+            TranslationError::Misaligned => write!(f, "misaligned memory for translation"),
         }
     }
 }

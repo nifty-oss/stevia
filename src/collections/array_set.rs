@@ -1,6 +1,10 @@
 use core::{cmp::Ordering, mem::size_of, ops::Deref, ptr::copy};
 
-use crate::transmute::{cast_slice_unchecked, cast_slice_unchecked_mut, Transmute};
+use crate::{
+    error::{Result, TranslationError},
+    from_bytes::{FromBytes, FromBytesMut},
+    transmute::{cast_slice_unchecked, cast_slice_unchecked_mut, Transmute},
+};
 
 pub trait Prefix: Transmute {
     fn as_usize(&self) -> usize;
@@ -60,27 +64,6 @@ where
 
     /// Array of nodes to store the tree.
     values: &'a [V],
-}
-
-impl<'a, P, V> ArraySet<'a, P, V>
-where
-    P: Prefix,
-    V: Copy + Clone + Default + PartialOrd + Transmute,
-{
-    /// Loads a sorted array from its byte representation.
-    ///
-    /// # Safety
-    ///
-    /// This method does not check the length of the byte slice nor its
-    /// alignment. The caller must ensure that the byte slice contains a
-    /// valid representation.
-    pub unsafe fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
-        let (length, values) = bytes.split_at(size_of::<P>());
-        Self {
-            length: P::transmute_unchecked(length),
-            values: cast_slice_unchecked(values),
-        }
-    }
 }
 
 /// Macro to implement the read-only interface for an array set type.
@@ -202,26 +185,11 @@ where
     values: &'a mut [V],
 }
 
-impl<'a, P, V> ArraySetMut<'a, P, V>
+impl<P, V> ArraySetMut<'_, P, V>
 where
     P: Prefix,
     V: Default + Copy + Clone + Ord + Transmute,
 {
-    /// Loads a sorted array from its byte representation.
-    ///
-    /// # Safety
-    ///
-    /// This method does not check the length of the byte slice nor its
-    /// alignment. The caller must ensure that the byte slice contains a
-    /// valid representation.
-    pub unsafe fn from_bytes_unchecked_mut(bytes: &'a mut [u8]) -> Self {
-        let (length, values) = bytes.split_at_mut(size_of::<P>());
-        Self {
-            length: P::transmute_unchecked_mut(length),
-            values: cast_slice_unchecked_mut(values),
-        }
-    }
-
     /// Returns a mutable reference to the value in the set, if any, that is equal to the
     /// given value.
     ///
@@ -308,6 +276,74 @@ where
         }
 
         None
+    }
+}
+
+unsafe impl<'a, P, V> FromBytes<'a> for ArraySet<'a, P, V>
+where
+    P: Prefix,
+    V: Default + Copy + Clone + Ord + Transmute,
+{
+    /// Loads a sorted array from its byte representation.
+    fn from_bytes(bytes: &'a [u8]) -> Result<Self> {
+        if bytes.len() < size_of::<P>() {
+            return Err(TranslationError::InvalidLength);
+        }
+
+        if align_of_val(bytes) != align_of::<Self>() {
+            return Err(TranslationError::InvalidLength);
+        }
+
+        Ok(unsafe { Self::from_bytes_unchecked(bytes) })
+    }
+
+    /// Loads a sorted array from its byte representation.
+    ///
+    /// # Safety
+    ///
+    /// This method does not check the length of the byte slice nor its
+    /// alignment. The caller must ensure that the byte slice contains a
+    /// valid representation.
+    unsafe fn from_bytes_unchecked(bytes: &'a [u8]) -> Self {
+        let (length, values) = bytes.split_at(size_of::<P>());
+        Self {
+            length: P::transmute_unchecked(length),
+            values: cast_slice_unchecked(values),
+        }
+    }
+}
+
+unsafe impl<'a, P, V> FromBytesMut<'a> for ArraySetMut<'a, P, V>
+where
+    P: Prefix,
+    V: Default + Copy + Clone + Ord + Transmute,
+{
+    /// Loads a sorted array from its byte representation.
+    fn from_bytes_mut(bytes: &'a mut [u8]) -> Result<Self> {
+        if bytes.len() < size_of::<P>() {
+            return Err(TranslationError::InvalidLength);
+        }
+
+        if align_of_val(bytes) != align_of::<Self>() {
+            return Err(TranslationError::InvalidLength);
+        }
+
+        Ok(unsafe { Self::from_bytes_unchecked_mut(bytes) })
+    }
+
+    /// Loads a sorted array from its byte representation.
+    ///
+    /// # Safety
+    ///
+    /// This method does not check the length of the byte slice nor its
+    /// alignment. The caller must ensure that the byte slice contains a
+    /// valid representation.
+    unsafe fn from_bytes_unchecked_mut(bytes: &'a mut [u8]) -> Self {
+        let (length, values) = bytes.split_at_mut(size_of::<P>());
+        Self {
+            length: P::transmute_unchecked_mut(length),
+            values: cast_slice_unchecked_mut(values),
+        }
     }
 }
 
