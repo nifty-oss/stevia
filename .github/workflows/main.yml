@@ -73,7 +73,6 @@ jobs:
         with:
           cargo-cache-key: cargo-test
           toolchain: test
-          solana: true
 
       - name: cargo-test
         run: ./make.sh test
