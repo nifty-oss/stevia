@@ -1,4 +1,4 @@
-//! A zero-copy crate for digging into bytes.
+//! A zero-copy library for creating lightweight data structures.
 
 #![no_std]
 

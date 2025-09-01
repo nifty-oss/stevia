@@ -1,6 +1,6 @@
 [package]
 name = "stevia"
-description = "A collection of lightweight zero-copy types"
+description = "A zero-copy library for creating lightweight data structures"
 version = "0.0.0"
 edition = "2021"
 authors = ["nifty-oss maintainers <maintainers@nifty-oss.org>"]
