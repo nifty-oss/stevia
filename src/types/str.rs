@@ -3,7 +3,7 @@ use core::{
     str::{from_utf8, from_utf8_unchecked},
 };
 
-use crate::{error::TranslationError, transmute::Transmute};
+use crate::{error::TranslationError, nullable::Nullable, transmute::Transmute};
 
 /// A `str` type that can be transmuted from a byte array.
 ///
@@ -11,6 +11,7 @@ use crate::{error::TranslationError, transmute::Transmute};
 /// it can represents a `str` of up to `MAX_SIZE` bytes. A null
 /// byte (`\0`) is used to indicate the end of the `str` value.
 #[repr(C)]
+#[derive(PartialEq)]
 pub struct Str<const MAX_SIZE: usize> {
     /// The bytes of the `str`.
     value: [u8; MAX_SIZE],
@@ -78,6 +79,12 @@ impl<const MAX_SIZE: usize> Str<MAX_SIZE> {
 }
 
 unsafe impl<const MAX_SIZE: usize> Transmute for Str<MAX_SIZE> {}
+
+impl<const MAX_SIZE: usize> Nullable for Str<MAX_SIZE> {
+    const NONE: Self = Self {
+        value: [b'\0'; MAX_SIZE],
+    };
+}
 
 #[cfg(test)]
 mod tests {
