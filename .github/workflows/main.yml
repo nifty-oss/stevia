@@ -40,19 +40,19 @@ jobs:
           components: hack, miri
 
       - name: cargo-clippy
-        run: ./make clippy
+        run: ./make.sh clippy
 
       - name: cargo-fmt
-        run: ./make format
+        run: ./make.sh format
 
       - name: cargo-doc
-        run: ./make doc
+        run: ./make.sh doc
 
       - name: cargo-hack
-        run: ./make hack
+        run: ./make.sh hack
 
       - name: cargo-miri
-        run: ./make miri
+        run: ./make.sh miri
 
   build:
     name: Build
@@ -69,10 +69,10 @@ jobs:
           solana: true
 
       - name: cargo-build
-        run: ./make build
+        run: ./make.sh build
 
       - name: cargo-build-sbf
-        run: ./make build-sbf
+        run: ./make.sh build-sbf
 
   test:
     name: Test
@@ -89,4 +89,4 @@ jobs:
           solana: true
 
       - name: cargo-test
-        run: ./make test
+        run: ./make.sh test

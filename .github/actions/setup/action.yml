@@ -20,7 +20,7 @@ runs:
     - name: Set Environment Variables
       shell: bash
       run: |
-        source make
+        source ./make.sh
         echo "RUST_TOOLCHAIN_BUILD=${RUST_TOOLCHAIN_BUILD}" >> $GITHUB_ENV
         echo "RUST_TOOLCHAIN_FORMAT=${RUST_TOOLCHAIN_FORMAT}" >> $GITHUB_ENV
         echo "RUST_TOOLCHAIN_LINT=${RUST_TOOLCHAIN_LINT}" >> $GITHUB_ENV
