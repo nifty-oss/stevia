@@ -9,11 +9,7 @@ if [ ! -f "$MANIFEST_FILE" ]; then
     exit 1
 fi
 
-if [ ! -z "$RUST_TOOLCHAIN_LINT" ]; then
-    TOOLCHAIN="+$RUST_TOOLCHAIN_LINT"
-fi
-
 CHECK_ARGS="--all-targets \
   --feature-powerset"
 
-cargo $TOOLCHAIN hack check --manifest-path $MANIFEST_FILE $CHECK_ARGS $@
+cargo hack check --manifest-path $MANIFEST_FILE $CHECK_ARGS $@

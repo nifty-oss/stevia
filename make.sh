@@ -4,8 +4,8 @@ set -e
 
 # Export environment variables and functions.
 export RUST_TOOLCHAIN_BUILD="1.84.1"
-export RUST_TOOLCHAIN_FORMAT="nightly-2024-11-22"
-export RUST_TOOLCHAIN_LINT="nightly-2024-11-22"
+export RUST_TOOLCHAIN_FORMAT="nightly-2025-02-16"
+export RUST_TOOLCHAIN_LINT="nightly-2025-02-16"
 export RUST_TOOLCHAIN_TEST="1.84.1"
 export SOLANA_CLI_VERSION="2.3.4"
 export WORKING_DIR=$(cd $(dirname $0) && pwd)

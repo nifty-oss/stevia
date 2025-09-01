@@ -9,22 +9,6 @@ env:
   CACHE: true
 
 jobs:
-  spellcheck:
-    name: Spellcheck
-    runs-on: ubuntu-latest
-    steps:
-      - name: Git Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Environment
-        uses: ./.github/actions/setup
-        with:
-          cargo-cache-key: cargo-spellcheck
-          components: spellcheck
-
-      - name: cargo-spellcheck
-        run: ./make spellcheck
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -37,7 +21,7 @@ jobs:
         with:
           cargo-cache-key: cargo-lint
           toolchain: format, lint
-          components: hack, miri
+          components: hack, miri, spellcheck
 
       - name: cargo-clippy
         run: ./make.sh clippy
@@ -53,6 +37,9 @@ jobs:
 
       - name: cargo-miri
         run: ./make.sh miri
+
+      - name: cargo-spellcheck
+        run: ./make.sh spellcheck
 
   build:
     name: Build
