@@ -6,3 +6,8 @@ edition = "2021"
 authors = ["nifty-oss maintainers <maintainers@nifty-oss.org>"]
 repository = "https://github.com/nifty-oss/stevia"
 license = "Apache-2.0"
+readme = "./README.md"
+rust-version = "1.84.1"
+
+[lib]
+crate-type = ["rlib"]
