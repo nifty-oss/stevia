@@ -26,7 +26,7 @@ impl<const MAX_SIZE: usize> Str<MAX_SIZE> {
 
     /// Tries to convert to a `&str` if it is valid UTF-8.
     ///
-    /// Behaves like [`core::from_utf8`].
+    /// Behaves like [`core::str::from_utf8`].
     #[inline]
     pub fn as_str(&self) -> Result<&str, TranslationError> {
         let end_index = self

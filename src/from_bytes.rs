@@ -18,7 +18,8 @@ pub unsafe trait FromBytes<T> {
     ///
     /// # Safety
     ///
-    /// <TODO>
+    /// The caller must ensure that `bytes` contains a valid representation of
+    /// the implementing type.
     unsafe fn from_bytes_unchecked(bytes: &[u8]) -> T;
 }
 
