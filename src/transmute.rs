@@ -81,7 +81,7 @@ pub unsafe fn cast_slice_unchecked_mut<A: Transmute, B: Transmute>(bytes: &mut [
 }
 
 // Convenience macro to implement the `Transmute` trait for common types.
-macro_rules! imp_transmute {
+macro_rules! impl_transmute {
     ( $($type:ty),* ) => {
         $(
             unsafe impl Transmute for $type {}
@@ -90,4 +90,4 @@ macro_rules! imp_transmute {
 }
 
 // Implement the `Transmute` trait for common numeric types.
-imp_transmute!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64, usize, isize);
+impl_transmute!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64, usize, isize);
