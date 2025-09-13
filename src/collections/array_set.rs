@@ -1,45 +1,16 @@
-use core::{cmp::Ordering, mem::size_of, ops::Deref, ptr::copy};
+use core::{
+    cmp::Ordering,
+    mem::size_of,
+    ops::{AddAssign, Deref, SubAssign},
+    ptr::copy,
+};
 
 use crate::{
     error::{Result, TranslationError},
     from_bytes::{FromBytes, FromBytesMut},
     transmute::{cast_slice_unchecked, cast_slice_unchecked_mut, Transmute},
+    types::{ToUsize, Unit},
 };
-
-pub trait Prefix: Transmute {
-    fn as_usize(&self) -> usize;
-
-    fn decrement(&mut self);
-
-    fn increment(&mut self);
-}
-
-// Convenience macro to implement the `Prefix` trait for common numeric types.
-macro_rules! impl_prefix {
-    ( $($type:ty),* ) => {
-        $(
-            impl Prefix for $type {
-                #[inline(always)]
-                fn as_usize(&self) -> usize {
-                    *self as usize
-                }
-
-                #[inline(always)]
-                fn decrement(&mut self) {
-                    *self -= 1;
-                }
-
-                #[inline(always)]
-                fn increment(&mut self) {
-                    *self += 1;
-                }
-            }
-        )*
-    };
-}
-
-// Implement the `Transmute` trait for common numeric types.
-impl_prefix!(u8, u16, u32, u64, u128, usize);
 
 /// A set-like type that stores elements in a sorted array.
 ///
@@ -54,7 +25,7 @@ impl_prefix!(u8, u16, u32, u64, u128, usize);
 /// aborts, memory leaks, and non-termination.
 pub struct ArraySet<'a, P, V>
 where
-    P: Prefix,
+    P: AddAssign<P> + SubAssign<P> + ToUsize + Transmute + Unit,
     V: Clone + Copy + Default + PartialOrd + Transmute,
 {
     /// Number of elements in the array
@@ -71,7 +42,7 @@ macro_rules! readonly_impl {
     ( $name:tt ) => {
         impl<'a, P, V> $name<'a, P, V>
         where
-            P: Prefix,
+            P: AddAssign<P> + SubAssign<P> + ToUsize + Transmute + Unit,
             V: Clone + Copy + Default + Ord + PartialOrd + Transmute,
         {
             /// Returns true if the set contains a value.
@@ -107,7 +78,7 @@ macro_rules! readonly_impl {
 
             #[inline(always)]
             pub fn len(&self) -> usize {
-                self.length.as_usize()
+                self.length.to_usize()
             }
 
             /// Returns the index of the value in the array.
@@ -127,7 +98,7 @@ macro_rules! readonly_impl {
                 }
 
                 let mut start = 0;
-                let mut end = self.length.as_usize() - 1;
+                let mut end = self.length.to_usize() - 1;
 
                 while start <= end {
                     let middle = start + (end.saturating_sub(start) / 2);
@@ -158,7 +129,7 @@ macro_rules! readonly_impl {
 
         impl<'a, P, V> Deref for $name<'a, P, V>
         where
-            P: Prefix,
+            P: AddAssign<P> + SubAssign<P> + ToUsize + Transmute + Unit,
             V: Clone + Copy + Default + Ord + PartialOrd + Transmute,
         {
             type Target = [V];
@@ -173,7 +144,7 @@ macro_rules! readonly_impl {
 /// A mutable set-like type that stores elements in a sorted array.
 pub struct ArraySetMut<'a, P, V>
 where
-    P: Prefix,
+    P: AddAssign<P> + SubAssign<P> + ToUsize + Transmute + Unit,
     V: Default + Copy + Clone + Ord + Transmute,
 {
     /// Number of elements in the array
@@ -187,7 +158,7 @@ where
 
 impl<P, V> ArraySetMut<'_, P, V>
 where
-    P: Prefix,
+    P: AddAssign<P> + SubAssign<P> + ToUsize + Transmute + Unit,
     V: Default + Copy + Clone + Ord + Transmute,
 {
     /// Returns a mutable reference to the value in the set, if any, that is equal to the
@@ -232,7 +203,7 @@ where
             }
             // insert the new value
             self.values[index] = value;
-            self.length.increment();
+            *self.length += P::UNIT;
             return true;
         }
 
@@ -271,7 +242,7 @@ where
                     copy(src_ptr, dest_ptr, self.values.len() - (index + 1));
                 }
             }
-            self.length.decrement();
+            *self.length -= P::UNIT;
             return Some(value);
         }
 
@@ -281,7 +252,7 @@ where
 
 unsafe impl<'a, P, V> FromBytes<'a> for ArraySet<'a, P, V>
 where
-    P: Prefix,
+    P: AddAssign<P> + SubAssign<P> + ToUsize + Transmute + Unit,
     V: Default + Copy + Clone + Ord + Transmute,
 {
     /// Loads a sorted array from its byte representation.
@@ -315,7 +286,7 @@ where
 
 unsafe impl<'a, P, V> FromBytesMut<'a> for ArraySetMut<'a, P, V>
 where
-    P: Prefix,
+    P: AddAssign<P> + SubAssign<P> + ToUsize + Transmute + Unit,
     V: Default + Copy + Clone + Ord + Transmute,
 {
     /// Loads a sorted array from its byte representation.
@@ -350,6 +321,30 @@ where
 readonly_impl!(ArraySet);
 readonly_impl!(ArraySetMut);
 
+/// Type alias for an `ArraySet` with `u8` as length type.
+pub type U8ArraySet<'a, V> = ArraySet<'a, u8, V>;
+
+/// Type alias for an `ArraySet` with `u16` as length type.
+pub type U16ArraySet<'a, V> = ArraySet<'a, u16, V>;
+
+/// Type alias for an `ArraySet` with `u32` as length type.
+pub type U32ArraySet<'a, V> = ArraySet<'a, u32, V>;
+
+/// Type alias for an `ArraySet` with `u64` as length type.
+pub type U64ArraySet<'a, V> = ArraySet<'a, u64, V>;
+
+/// Type alias for an `ArraySetMut` with `u8` as length type.
+pub type U8ArraySetMut<'a, V> = ArraySetMut<'a, u8, V>;
+
+/// Type alias for an `ArraySetMut` with `u16` as length type.
+pub type U16ArraySetMut<'a, V> = ArraySetMut<'a, u16, V>;
+
+/// Type alias for an `ArraySetMut` with `u32` as length type.
+pub type U32ArraySetMut<'a, V> = ArraySetMut<'a, u32, V>;
+
+/// Type alias for an `ArraySetMut` with `u64` as length type.
+pub type U64ArraySetMut<'a, V> = ArraySetMut<'a, u64, V>;
+
 #[cfg(test)]
 mod tests {
     use core::slice::from_raw_parts_mut;
@@ -361,7 +356,7 @@ mod tests {
         let mut array = [0u64; size_of::<u64>() * 3];
         // Ensure that `bytes` has 8-byte alignment.
         let bytes = unsafe { from_raw_parts_mut(array.as_mut_ptr() as *mut u8, 18) };
-        let mut set = unsafe { ArraySetMut::<u64, u8>::from_bytes_unchecked_mut(bytes) };
+        let mut set = unsafe { U64ArraySetMut::<u8>::from_bytes_unchecked_mut(bytes) };
 
         set.insert(10);
         set.insert(1);
@@ -369,7 +364,7 @@ mod tests {
         set.insert(7);
         set.insert(4);
 
-        let set = unsafe { ArraySet::<u64, u8>::from_bytes_unchecked(bytes) };
+        let set = unsafe { U64ArraySet::<u8>::from_bytes_unchecked(bytes) };
         assert_eq!(set.len(), 5);
         assert_eq!(&*set, &[1, 2, 4, 7, 10]);
 
@@ -379,7 +374,7 @@ mod tests {
     #[test]
     fn test_remove() {
         let mut bytes = [0; size_of::<u8>() + 10 * size_of::<u8>()];
-        let mut set = unsafe { ArraySetMut::<u8, u8>::from_bytes_unchecked_mut(&mut bytes) };
+        let mut set = unsafe { U8ArraySetMut::<u8>::from_bytes_unchecked_mut(&mut bytes) };
 
         set.insert(1);
         set.insert(10);
@@ -409,7 +404,7 @@ mod tests {
     #[test]
     fn test_get() {
         let mut bytes = [0; size_of::<u8>() + 10 * size_of::<u8>()];
-        let mut set = unsafe { ArraySetMut::<u8, u8>::from_bytes_unchecked_mut(&mut bytes) };
+        let mut set = unsafe { U8ArraySetMut::<u8>::from_bytes_unchecked_mut(&mut bytes) };
 
         set.insert(1);
         set.insert(10);
