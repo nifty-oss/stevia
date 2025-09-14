@@ -261,7 +261,7 @@ where
             return Err(TranslationError::InvalidLength);
         }
 
-        if align_of_val(bytes) != align_of::<Self>() {
+        if align_of_val(bytes) != align_of::<P>() {
             return Err(TranslationError::InvalidLength);
         }
 
@@ -295,7 +295,7 @@ where
             return Err(TranslationError::InvalidLength);
         }
 
-        if align_of_val(bytes) != align_of::<Self>() {
+        if align_of_val(bytes) < align_of::<P>() {
             return Err(TranslationError::InvalidLength);
         }
 
