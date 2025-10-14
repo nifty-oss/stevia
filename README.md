@@ -45,4 +45,4 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 
-This crate is based on [Podded](https://crates.io/crates/podded) under the [MIT license](./LICENSE).
+This crate is based on [Podded](https://crates.io/crates/podded) under the [Apache License, Version 2.0](./LICENSE).
